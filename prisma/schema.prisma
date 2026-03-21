@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum CompanySize {
+  large
+  medium
+  small
+}
+
+enum RecruitmentType {
+  summer
+  daily
+  unknown
+}
+
+enum JobStatus {
+  open
+  closing_soon
+  closed
+  unknown
+}
+
+enum CrawlStatus {
+  success
+  failed
+  skipped
+}
+
+model Company {
+  id              String      @id @default(cuid())
+  name            String
+  slug            String      @unique
+  companySize     CompanySize
+  industryTags    String[]
+  officialCareerUrl String?
+  campusCareerUrl   String?
+  sourceType      String      @default("manual")
+  crawlEnabled    Boolean     @default(false)
+  crawlAdapterId  String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  jobs      JobPosting[]
+  crawlLogs CrawlLog[]
+
+  @@index([companySize])
+}
+
+model JobPosting {
+  id                  String          @id @default(cuid())
+  companyId           String
+  title               String
+  recruitmentType     RecruitmentType @default(unknown)
+  locationRaw         String?
+  locationNormalized  String[]
+  deadlineAt          DateTime?
+  status              JobStatus       @default(unknown)
+  applyUrl            String
+  sourceUrl           String?
+  descriptionSnippet  String?
+  lastCheckedAt       DateTime        @default(now())
+  hash                String          @unique
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([recruitmentType])
+  @@index([status])
+}
+
+model CrawlLog {
+  id           String      @id @default(cuid())
+  companyId    String
+  runStatus    CrawlStatus
+  message      String?
+  fetchedCount Int         @default(0)
+  createdAt    DateTime    @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([createdAt])
+}
