@@ -1,8 +1,6 @@
 import { JobList } from "@/components/job-list";
 import { Footer } from "@/components/footer";
 import { getStats, getLastUpdateTime } from "@/lib/queries";
-import { format } from "date-fns";
-import { zhCN } from "date-fns/locale";
 import { Suspense } from "react";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +13,13 @@ async function StatsBar() {
     stats = await getStats();
     const lastUpdateDate = await getLastUpdateTime();
     if (lastUpdateDate) {
-      lastUpdate = format(lastUpdateDate, "yyyy年M月d日 HH:mm", { locale: zhCN });
+      lastUpdate = lastUpdateDate.toLocaleDateString("zh-CN", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
     }
   } catch {
     // 数据库可能未初始化，静默处理
