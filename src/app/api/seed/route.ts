@@ -57,16 +57,34 @@ export async function POST(request: NextRequest) {
 
     // 为每个有招聘链接的公司创建一条导航岗位
     // 优先使用 campusCareerUrl（校招页），其次 officialCareerUrl（官方招聘页）
+    // 城市使用种子数据中的 locations，支持多城市筛选
     let jobsCreated = 0;
+    let jobsUpdated = 0;
     const companies = await prisma.company.findMany();
+
+    // 构建 slug -> seed 映射，用于获取 locations
+    const seedMap = new Map(companiesSeed.map((s) => [s.slug, s]));
 
     for (const company of companies) {
       const url = company.campusCareerUrl || company.officialCareerUrl;
       if (!url) continue;
 
+      const seed = seedMap.get(company.slug);
+      const locations = seed?.locations?.length ? seed.locations : ["全国"];
+      const locationRaw = locations.join("、");
+
       const hash = `nav-${company.slug}-campus`;
       const existing = await prisma.jobPosting.findUnique({ where: { hash } });
-      if (existing) continue;
+
+      if (existing) {
+        // 更新已有记录的城市信息
+        await prisma.jobPosting.update({
+          where: { hash },
+          data: { locationRaw, locationNormalized: locations },
+        });
+        jobsUpdated++;
+        continue;
+      }
 
       const isCampus = !!company.campusCareerUrl;
       await prisma.jobPosting.create({
@@ -74,8 +92,8 @@ export async function POST(request: NextRequest) {
           companyId: company.id,
           title: `${company.name} - ${isCampus ? "校招实习投递入口" : "官方招聘页"}`,
           recruitmentType: "unknown",
-          locationRaw: "全国",
-          locationNormalized: ["全国"],
+          locationRaw,
+          locationNormalized: locations,
           status: "open",
           applyUrl: url,
           sourceUrl: url,
@@ -89,7 +107,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       companies: { created, updated, total: companiesSeed.length },
-      jobs: { created: jobsCreated },
+      jobs: { created: jobsCreated, updated: jobsUpdated },
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
