@@ -55,28 +55,31 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 为每个有 campusCareerUrl 的公司创建一条导航岗位
+    // 为每个有招聘链接的公司创建一条导航岗位
+    // 优先使用 campusCareerUrl（校招页），其次 officialCareerUrl（官方招聘页）
     let jobsCreated = 0;
     const companies = await prisma.company.findMany();
 
     for (const company of companies) {
-      if (!company.campusCareerUrl) continue;
+      const url = company.campusCareerUrl || company.officialCareerUrl;
+      if (!url) continue;
 
       const hash = `nav-${company.slug}-campus`;
       const existing = await prisma.jobPosting.findUnique({ where: { hash } });
       if (existing) continue;
 
+      const isCampus = !!company.campusCareerUrl;
       await prisma.jobPosting.create({
         data: {
           companyId: company.id,
-          title: `${company.name} - 校招实习投递入口`,
+          title: `${company.name} - ${isCampus ? "校招实习投递入口" : "官方招聘页"}`,
           recruitmentType: "unknown",
           locationRaw: "全国",
           locationNormalized: ["全国"],
           status: "open",
-          applyUrl: company.campusCareerUrl,
-          sourceUrl: company.campusCareerUrl,
-          descriptionSnippet: `点击前往 ${company.name} 官方校招页面查看最新实习岗位`,
+          applyUrl: url,
+          sourceUrl: url,
+          descriptionSnippet: `点击前往 ${company.name} ${isCampus ? "官方校招页面" : "官方招聘页面"}查看最新实习岗位`,
           hash,
         },
       });
