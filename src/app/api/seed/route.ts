@@ -55,14 +55,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 为每个有招聘链接的公司创建一条导航岗位
-    // 优先使用 campusCareerUrl（校招页），其次 officialCareerUrl（官方招聘页）
-    // 城市使用种子数据中的 locations，支持多城市筛选
+    // 为每个有招聘链接的公司创建导航岗位
+    // - "both" 类型公司生成两条记录（暑期实习 + 日常实习）
+    // - "summer" / "daily" 类型生成一条对应记录
+    // - "unknown" 类型生成一条未分类记录
     let jobsCreated = 0;
     let jobsUpdated = 0;
     const companies = await prisma.company.findMany();
-
-    // 构建 slug -> seed 映射，用于获取 locations
     const seedMap = new Map(companiesSeed.map((s) => [s.slug, s]));
 
     for (const company of companies) {
@@ -72,36 +71,87 @@ export async function POST(request: NextRequest) {
       const seed = seedMap.get(company.slug);
       const locations = seed?.locations?.length ? seed.locations : ["全国"];
       const locationRaw = locations.join("、");
+      const isCampus = !!company.campusCareerUrl;
+      const rType = seed?.recruitmentTypes || "unknown";
 
-      const hash = `nav-${company.slug}-campus`;
-      const existing = await prisma.jobPosting.findUnique({ where: { hash } });
+      // 决定要生成哪些记录
+      type Entry = { suffix: string; type: "summer" | "daily" | "unknown"; title: string };
+      const entries: Entry[] = [];
 
-      if (existing) {
-        // 更新已有记录的城市信息
-        await prisma.jobPosting.update({
-          where: { hash },
-          data: { locationRaw, locationNormalized: locations },
+      if (rType === "both") {
+        entries.push({
+          suffix: "summer",
+          type: "summer",
+          title: `${company.name} - 暑期实习投递入口`,
         });
-        jobsUpdated++;
-        continue;
+        entries.push({
+          suffix: "daily",
+          type: "daily",
+          title: `${company.name} - 日常实习投递入口`,
+        });
+      } else if (rType === "summer") {
+        entries.push({
+          suffix: "summer",
+          type: "summer",
+          title: `${company.name} - 暑期实习投递入口`,
+        });
+      } else if (rType === "daily") {
+        entries.push({
+          suffix: "daily",
+          type: "daily",
+          title: `${company.name} - 日常实习投递入口`,
+        });
+      } else {
+        entries.push({
+          suffix: "campus",
+          type: "unknown",
+          title: `${company.name} - ${isCampus ? "校招实习投递入口" : "官方招聘页"}`,
+        });
       }
 
-      const isCampus = !!company.campusCareerUrl;
-      await prisma.jobPosting.create({
-        data: {
-          companyId: company.id,
-          title: `${company.name} - ${isCampus ? "校招实习投递入口" : "官方招聘页"}`,
-          recruitmentType: "unknown",
-          locationRaw,
-          locationNormalized: locations,
-          status: "open",
-          applyUrl: url,
-          sourceUrl: url,
-          descriptionSnippet: `点击前往 ${company.name} ${isCampus ? "官方校招页面" : "官方招聘页面"}查看最新实习岗位`,
-          hash,
-        },
-      });
-      jobsCreated++;
+      for (const entry of entries) {
+        const hash = `nav-${company.slug}-${entry.suffix}`;
+        const existing = await prisma.jobPosting.findUnique({ where: { hash } });
+
+        if (existing) {
+          await prisma.jobPosting.update({
+            where: { hash },
+            data: {
+              title: entry.title,
+              recruitmentType: entry.type,
+              locationRaw,
+              locationNormalized: locations,
+            },
+          });
+          jobsUpdated++;
+          continue;
+        }
+
+        await prisma.jobPosting.create({
+          data: {
+            companyId: company.id,
+            title: entry.title,
+            recruitmentType: entry.type,
+            locationRaw,
+            locationNormalized: locations,
+            status: "open",
+            applyUrl: url,
+            sourceUrl: url,
+            descriptionSnippet: `点击前往 ${company.name} ${isCampus ? "官方校招页面" : "官方招聘页面"}查看最新岗位`,
+            hash,
+          },
+        });
+        jobsCreated++;
+      }
+
+      // 清理旧的 nav-xxx-campus 记录（如果该公司已改为 both/summer/daily）
+      if (rType !== "unknown") {
+        const oldHash = `nav-${company.slug}-campus`;
+        const old = await prisma.jobPosting.findUnique({ where: { hash: oldHash } });
+        if (old) {
+          await prisma.jobPosting.delete({ where: { hash: oldHash } });
+        }
+      }
     }
 
     return NextResponse.json({
