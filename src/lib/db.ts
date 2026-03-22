@@ -1,16 +1,14 @@
 import { PrismaClient } from "@/generated/prisma/client";
-import { Pool } from "pg";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaNeon } from "@prisma/adapter-neon";
 
+/**
+ * Neon serverless 驱动，兼容 Edge Runtime（Cloudflare Workers）
+ * PrismaNeon 接受 PoolConfig 而非 Pool 实例
+ */
 function createPrismaClient() {
-  const pool = new Pool({
+  const adapter = new PrismaNeon({
     connectionString: process.env.DATABASE_URL!,
-    max: 5,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
   });
-  // @ts-expect-error - pg Pool type mismatch between @types/pg versions
-  const adapter = new PrismaPg(pool);
   return new PrismaClient({ adapter });
 }
 
